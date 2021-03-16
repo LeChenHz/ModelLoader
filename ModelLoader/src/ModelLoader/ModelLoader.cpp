@@ -46,6 +46,7 @@ void ModelLoader::initVulkan() {
 	createVertexBuffer(0); //顶点缓冲
 	createIndexBuffer(0);//索引缓冲
 	createUniformBuffers();//uniform缓冲
+	createBlinPhongBuffers();
 	createDescriptorPool();//描述符池
 	createImGuiDescriptorPool();//* For ImGUI in Vulkan */
 	createDescriptorSets();//描述符集
@@ -158,6 +159,11 @@ void ModelLoader::mainLoop() {
 			ImGui::SliderFloat("Zoom", &f, -30.0f, 30.0f);          
 			if (f != last_f)camera.ProcessMouseScroll((f - last_f));
 
+			ImGui::SliderFloat("ambient", &ambientValue, 0.0f, 1.0f);
+			ImGui::SliderFloat("pow", &powValue, 0.0f, 64.0f);
+
+			
+
 			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 			ImGui::Text("The number of Vertexs: %d", getVertexNums());
 			ImGui::Text("The number of Triangles: %d", getTriangles());
@@ -228,6 +234,9 @@ void ModelLoader::cleanupSwapChain() {
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		vkDestroyBuffer(device, uniformBuffers[i], nullptr);
 		vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+
+		vkDestroyBuffer(device, blinphongBuffers[i], nullptr);
+		vkFreeMemory(device, blinphongBuffersMemory[i], nullptr);
 	}
 
 	vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -334,6 +343,7 @@ void ModelLoader::recreateSwapChain() {
 	createDepthResources();
 	createFramebuffers();
 	createUniformBuffers();
+	createBlinPhongBuffers();
 	createDescriptorPool();
 	createDescriptorSets();
 	createCommandBuffers();
@@ -796,7 +806,7 @@ void ModelLoader::createDescriptorSetLayout() {
 	uboLayoutBinding.binding = 0;
 	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	uboLayoutBinding.pImmutableSamplers = nullptr;
 
 	VkDescriptorSetLayoutBinding samplerLayoutBinding{};
@@ -806,7 +816,14 @@ void ModelLoader::createDescriptorSetLayout() {
 	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 	samplerLayoutBinding.pImmutableSamplers = nullptr;
 
-	std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
+	VkDescriptorSetLayoutBinding bpoLayoutBinding{};
+	bpoLayoutBinding.binding = 2;
+	bpoLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	bpoLayoutBinding.descriptorCount = 1;
+	bpoLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	bpoLayoutBinding.pImmutableSamplers = nullptr;
+
+	std::array<VkDescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, samplerLayoutBinding, bpoLayoutBinding };
 	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -819,9 +836,9 @@ void ModelLoader::createDescriptorSetLayout() {
 }
 
 void ModelLoader::createGraphicsPipeline() {
-	auto vertShaderCode = readFile(VERTEX_SHADER_PATH);
-	auto fragShaderCode = readFile(FRAGMENT_SHADER_PATH);
 
+	auto vertShaderCode = readFile(BLINN_PHONG_VERTEX_SHADER_PATH);
+	auto fragShaderCode = readFile(BLINN_PHONG_FRAGMENT_SHADER_PATH);
 	VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
 	VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
@@ -992,18 +1009,34 @@ void ModelLoader::createUniformBuffers() {
 	}
 }
 
+void ModelLoader::createBlinPhongBuffers() {
+	VkDeviceSize buffersize = sizeof(BlinnPhongObject);
+
+	blinphongBuffers.resize(swapChainImages.size());
+	blinphongBuffersMemory.resize(swapChainImages.size());
+
+	for (size_t i = 0; i < swapChainImages.size(); i++)
+	{
+		createBuffer(buffersize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			blinphongBuffers[i], blinphongBuffersMemory[i]);
+	}
+}
+
 void ModelLoader::createDescriptorPool() {
-	std::array<VkDescriptorPoolSize, 2> poolSize = {};
+	std::array<VkDescriptorPoolSize, 3> poolSize = {};
 	poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	poolSize[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());//每一帧分配一个描述符
 	poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //给纹理描述符用
 	poolSize[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+	poolSize[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize[2].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
 
 	VkDescriptorPoolCreateInfo poolInfo = {};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSize.size());
 	poolInfo.pPoolSizes = poolSize.data();
-	poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());//分配最大描述符集个数
+	poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size() + 1);//分配最大描述符集个数
 
 	if (vkCreateDescriptorPool(device, &poolInfo, nullptr,
 		&descriptorPool) != VK_SUCCESS) {
@@ -1070,7 +1103,13 @@ void ModelLoader::createDescriptorSets() {
 		imageInfo.imageView = textureImageView[CURRENT_TEXTURE_INDEX];
 		imageInfo.sampler = textureSampler;
 
-		std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
+		/* bpo */
+		VkDescriptorBufferInfo bpobufferInfo = {};
+		bpobufferInfo.buffer = blinphongBuffers[i];
+		bpobufferInfo.offset = 0;
+		bpobufferInfo.range = sizeof(BlinnPhongObject);
+
+		std::array<VkWriteDescriptorSet, 3> descriptorWrites = {};
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descriptorSets[i];
 		descriptorWrites[0].dstBinding = 0;
@@ -1088,6 +1127,16 @@ void ModelLoader::createDescriptorSets() {
 		descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		descriptorWrites[1].descriptorCount = 1;
 		descriptorWrites[1].pImageInfo = &imageInfo;
+
+		descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[2].dstSet = descriptorSets[i];
+		descriptorWrites[2].dstBinding = 2;
+		descriptorWrites[2].dstArrayElement = 0;
+		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrites[2].descriptorCount = 1;
+		descriptorWrites[2].pBufferInfo = &bpobufferInfo;
+		descriptorWrites[2].pImageInfo = nullptr;
+		descriptorWrites[2].pTexelBufferView = nullptr;
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -1108,7 +1157,13 @@ void ModelLoader::UpdateDescriptorSets() {
 		imageInfo.imageView = textureImageView[CURRENT_TEXTURE_INDEX];
 		imageInfo.sampler = textureSampler;
 
-		std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
+		/* bpo */
+		VkDescriptorBufferInfo bpobufferInfo = {};
+		bpobufferInfo.buffer = blinphongBuffers[i];
+		bpobufferInfo.offset = 0;
+		bpobufferInfo.range = sizeof(BlinnPhongObject);
+
+		std::array<VkWriteDescriptorSet, 3> descriptorWrites = {};
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descriptorSets[i];
 		descriptorWrites[0].dstBinding = 0;
@@ -1126,6 +1181,16 @@ void ModelLoader::UpdateDescriptorSets() {
 		descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		descriptorWrites[1].descriptorCount = 1;
 		descriptorWrites[1].pImageInfo = &imageInfo;
+
+		descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[2].dstSet = descriptorSets[i];
+		descriptorWrites[2].dstBinding = 2;
+		descriptorWrites[2].dstArrayElement = 0;
+		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrites[2].descriptorCount = 1;
+		descriptorWrites[2].pBufferInfo = &bpobufferInfo;
+		descriptorWrites[2].pImageInfo = nullptr;
+		descriptorWrites[2].pTexelBufferView = nullptr;
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -1725,11 +1790,24 @@ void ModelLoader::updateUniformBuffer(uint32_t currentImage) {
 	ubo.proj = glm::perspective(glm::radians(camera.Zoom), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 100.0f);
 	/* OpenGL和Vulkan Y轴是相反的 */
 	ubo.proj[1][1] *= -1;
+	ubo.ambientValue = ambientValue;
+	ubo.powValue = powValue;
 
 	void* data;
 	vkMapMemory(device, uniformBuffersMemory[currentImage], 0, sizeof(ubo), 0, &data);
 	memcpy(data, &ubo, sizeof(ubo));
 	vkUnmapMemory(device, uniformBuffersMemory[currentImage]);
+
+	BlinnPhongObject bpo{};
+	bpo.CameraPositon = camera.Position;
+	bpo.lightPosition = lightPosition;
+	bpo.BlinnPhong = blinn;
+	
+	void* data1;
+	vkMapMemory(device, blinphongBuffersMemory[currentImage], 0, sizeof(bpo), 0, &data1);
+	memcpy(data1, &bpo, sizeof(bpo));
+	vkUnmapMemory(device, blinphongBuffersMemory[currentImage]);
+
 }
 
 glm::mat4 ModelLoader::vgmCast(mat4 vgmModel, glm::mat4& model)
@@ -1779,7 +1857,11 @@ void ModelLoader::loadModel() {
 				1.0f - attrib.texcoords[2 * index.texcoord_index + 1] //V  Vulkan纹理坐标原点是左上角，OBJ是左下角，反转V坐标即可
 			};
 
-			vertex.color = { 1.0f, 1.0f, 1.0f };
+			vertex.normal = {
+				attrib.normals[3 * index.normal_index + 0],
+				attrib.normals[3 * index.normal_index + 1],
+				attrib.normals[3 * index.normal_index + 2]
+			};
 
 			if (uniqueVertices.count(vertex) == 0) {
 				uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());

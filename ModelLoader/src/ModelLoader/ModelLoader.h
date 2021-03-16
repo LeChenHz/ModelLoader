@@ -47,7 +47,7 @@ const bool enableValidationLayers = true;
 
 struct Vertex {
 	glm::vec3 pos;
-	glm::vec3 color;
+	glm::vec3 normal;
 	glm::vec2 texCoord;
 
 	static VkVertexInputBindingDescription getBindingDescription() {
@@ -70,7 +70,7 @@ struct Vertex {
 		attributeDescriptions[1].binding = 0;
 		attributeDescriptions[1].location = 1;
 		attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attributeDescriptions[1].offset = offsetof(Vertex, color);
+		attributeDescriptions[1].offset = offsetof(Vertex, normal);
 
 		attributeDescriptions[2].binding = 0;
 		attributeDescriptions[2].location = 2;
@@ -80,7 +80,7 @@ struct Vertex {
 		return attributeDescriptions;
 	}
 	bool operator==(const Vertex& other) const {
-		return pos == other.pos && color == other.color && texCoord == other.texCoord;
+		return pos == other.pos && normal == other.normal && texCoord == other.texCoord;
 	}
 };
 
@@ -88,7 +88,7 @@ namespace std {
 	template<> struct hash<Vertex> {
 		size_t operator()(Vertex const& vertex) const {
 			return ((hash<glm::vec3>()(vertex.pos)
-				^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1)
+				^ (hash<glm::vec3>()(vertex.normal) << 1)) >> 1)
 				^ (hash<glm::vec2>()(vertex.texCoord) << 1);
 		}
 	};
@@ -98,7 +98,17 @@ struct UniformBufferObject {
 	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 proj;
+	float ambientValue;
+	float powValue;
 };
+
+struct BlinnPhongObject {
+	glm::vec3 lightPosition;
+	glm::vec3 CameraPositon;
+	int BlinnPhong;
+};
+
+
 
 struct QueueFamilyIndices {
 	uint32_t graphicsFamily = -1;
@@ -146,6 +156,15 @@ public:
 	/* camera */
 	Camera camera;
 
+	/* blinn-phong */
+	bool Blinn_Phong = false;
+	int blinn = 0;
+	float ambientValue = 0.05;
+	float powValue = 32.0;
+
+	/* light Positon */
+	glm::vec3 lightPosition = glm::vec3(0.0f, 3.0f, 2.0f);
+
 	/* track rotations */
 	quat qRot = quat(1.0f, 0.0f, 0.0f, 0.0f);
 	vec3 PanDolly = vec3(0.0f);
@@ -191,8 +210,13 @@ public:
 	VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 
 	VkDescriptorSetLayout descriptorSetLayout;
+	/* ubo */
 	std::vector<VkBuffer> uniformBuffers;
 	std::vector<VkDeviceMemory> uniformBuffersMemory;
+	/* bpo */
+	std::vector<VkBuffer> blinphongBuffers;
+	std::vector<VkDeviceMemory> blinphongBuffersMemory;
+
 	VkDescriptorPool descriptorPool;
 	VkDescriptorPool imgui_descriptorPool;
 	std::vector<VkDescriptorSet> descriptorSets;
@@ -234,6 +258,8 @@ public:
 	void createDescriptorSetLayout();
 
 	void createUniformBuffers();
+
+	void createBlinPhongBuffers();
 
 	void createDescriptorPool();
 
