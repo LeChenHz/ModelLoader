@@ -103,9 +103,9 @@ struct UniformBufferObject {
 };
 
 struct BlinnPhongObject {
+	bool BlinnPhong;
 	glm::vec3 lightPosition;
 	glm::vec3 CameraPositon;
-	int BlinnPhong;
 };
 
 
@@ -158,7 +158,6 @@ public:
 
 	/* blinn-phong */
 	bool Blinn_Phong = false;
-	int blinn = 0;
 	float ambientValue = 0.05;
 	float powValue = 32.0;
 

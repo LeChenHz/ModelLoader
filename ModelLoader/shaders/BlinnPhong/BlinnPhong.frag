@@ -10,11 +10,9 @@ layout(binding = 0) uniform UniformBufferObject {
 } ubo;
 layout(binding = 1)uniform sampler2D texSampler;
 layout(binding = 2)uniform BlinnPhongObject{
+	bool Blinn;
 	vec3 lightPosition;
 	vec3 CameraPositon;
-	float ambientVal;
-	float powVal;
-	int BlinnPhong;
 }bpo;
 
 layout(location = 0) in vec3 normal;
@@ -40,7 +38,14 @@ void main() {
 	vec3 halfwayDir = normalize(lightDir + viewDir);
 	spec = pow(max(dot(normal, halfwayDir),0.0), ubo.powval);
 	vec3 specular = vec3(0.3) * spec;
-
-	outColor = vec4(ambient + diffuse + specular, 1.0);
+	
+	if(bpo.Blinn)
+	{
+		outColor = vec4(ambient + diffuse + specular, 1.0);
+	}
+	else
+	{
+		outColor = texture(texSampler, fragTexCoord);
+	}
 
 }

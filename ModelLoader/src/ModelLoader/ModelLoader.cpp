@@ -158,11 +158,9 @@ void ModelLoader::mainLoop() {
 			last_f = f;
 			ImGui::SliderFloat("Zoom", &f, -30.0f, 30.0f);          
 			if (f != last_f)camera.ProcessMouseScroll((f - last_f));
-
+			ImGui::Checkbox("blinn", &Blinn_Phong);
 			ImGui::SliderFloat("ambient", &ambientValue, 0.0f, 1.0f);
-			ImGui::SliderFloat("pow", &powValue, 0.0f, 64.0f);
-
-			
+			ImGui::SliderFloat("pow", &powValue, 0.0f, 64.0f);	
 
 			ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 			ImGui::Text("The number of Vertexs: %d", getVertexNums());
@@ -1801,7 +1799,7 @@ void ModelLoader::updateUniformBuffer(uint32_t currentImage) {
 	BlinnPhongObject bpo{};
 	bpo.CameraPositon = camera.Position;
 	bpo.lightPosition = lightPosition;
-	bpo.BlinnPhong = blinn;
+	bpo.BlinnPhong = Blinn_Phong;
 	
 	void* data1;
 	vkMapMemory(device, blinphongBuffersMemory[currentImage], 0, sizeof(bpo), 0, &data1);
